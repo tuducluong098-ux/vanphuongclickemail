@@ -1,1 +1,294 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Nhận mail vanphuong.click</title>
+  <style>
+    body{font-family:Arial;padding:15px;max-width:900px;margin:auto}
+    input{width:100%;padding:10px;margin:10px 0;border:1px solid #ccc;border-radius:8px}
+    button{padding:10px 14px;border:0;border-radius:8px;background:#111;color:#fff}
+    button:active{opacity:.85}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .muted{color:#666;font-size:13px}
+    .box{border:1px solid #eee;border-radius:12px;padding:12px;margin-top:12px;background:#fafafa}
+    ul{padding-left:18px;margin:10px 0}
+    li{margin:10px 0}
+    a{cursor:pointer;color:#0b57d0;text-decoration:underline}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eee;font-size:12px;margin-left:8px}
+    .new{background:#ffe8a3}
+    #render{border:1px solid #eee;border-radius:10px;background:#fff;padding:12px;min-height:120px;white-space:pre-wrap}
+    .otp{font-weight:700;font-size:18px;padding:6px 10px;border-radius:10px;background:#111;color:#fff;display:inline-block}
+    .danger{color:#b00020}
+    .quick-btn{padding:8px 12px;border-radius:10px;background:#111;color:#fff;border:0;margin-left:8px}
+  </style>
+</head>
+<body>
 
+<h2>📩 Nhận mail vanphuong.click</h2>
+
+<div class="box">
+  <div class="row">
+    <div style="flex:1 1 320px;min-width:260px">
+      <input id="email" placeholder="Enter your email address"
+             autocomplete="off" autocapitalize="none" spellcheck="false">
+      <div id="hint" class="muted"></div>
+    </div>
+
+    <button onclick="loadInbox(true)">Load Inbox</button>
+  </div>
+
+  <div id="status" class="muted"></div>
+</div>
+
+<div class="box">
+  <b>Mail list</b>
+  <ul id="list"><li class="muted">Mail list — if nothing shows up, click “Load Inbox” again.</li></ul>
+</div>
+
+<div class="box">
+  <div class="row" style="justify-content:space-between">
+    <b>Message / OTP</b>
+    <button id="copyBtn" onclick="copyOtp()" style="display:none">📋 Copy OTP</button>
+  </div>
+
+  <!-- QUICK OTP (latest NEW mail only) -->
+  <div id="quickOtpBox" style="margin:10px 0;display:none"></div>
+
+  <div id="otpBox" style="margin:10px 0;display:none"></div>
+  <div id="render" class="muted">Select a message to view its content.</div>
+</div>
+
+<script>
+/** CONFIG **/
+const API = "https://vanphuongclick.vercel.app/api"; // your Vercel link
+const ALLOWED_DOMAIN = "@vanphuong.click";             // allowed domain
+const OTP_REGEX = /\b\d{4,8}\b/g;                     // OTP 4–8 digits
+
+/** RAM only (no storage) **/
+let seenIds = new Set();
+let currentOtp = "";
+let currentOtpMessageId = "";
+let lastLoadedEmail = "";
+
+/** helpers **/
+function esc(str){
+  return String(str).replace(/[&<>"']/g, s => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[s]));
+}
+function looksLikeHtml(s){ return /<\/?[a-z][\s\S]*>/i.test(s); }
+function extractBody(data){
+  const tries = [
+    data?.body?.html, data?.body?.text,
+    data?.html, data?.text,
+    data?.content?.html, data?.content?.text
+  ];
+  for (const v of tries){
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return "";
+}
+function setStatus(msg, isErr=false){
+  const el = document.getElementById("status");
+  el.innerHTML = isErr ? `<span class="danger">${esc(msg)}</span>` : esc(msg);
+}
+function domainOk(email){
+  return email.toLowerCase().endsWith(ALLOWED_DOMAIN.toLowerCase());
+}
+
+function validateEmailOrAlert(){
+  const email = document.getElementById("email").value.trim();
+  const hint = document.getElementById("hint");
+  hint.textContent = "";
+
+  if (!email) { alert("Please enter an email address."); return null; }
+  if (!email.includes("@")) { alert("Invalid email address."); return null; }
+  if (!domainOk(email)) {
+    hint.innerHTML = `<span class="danger">Only ${esc(ALLOWED_DOMAIN)} is allowed.</span>`;
+    alert(`Only ${ALLOWED_DOMAIN} is allowed.`);
+    return null;
+  }
+  return email;
+}
+
+/** QUICK OTP: show only if latest mail is NEW (not opened/copied yet) **/
+async function checkLatestOtp(email, messages){
+  const quickBox = document.getElementById("quickOtpBox");
+  quickBox.style.display = "none";
+  quickBox.innerHTML = "";
+
+  if (!messages || messages.length === 0) return;
+
+  const latest = messages[0]; // newest (after sort)
+
+  // Only show Quick OTP if latest is NEW in this session
+  if (seenIds.has(latest.id)) return;
+
+  try {
+    const r = await fetch(`${API}/message?id=${encodeURIComponent(latest.id)}&mailbox=${encodeURIComponent(email)}`);
+    const data = await r.json();
+    const body = extractBody(data);
+    if (!body) return;
+
+    const otps = body.match(OTP_REGEX) || [];
+    if (otps.length === 0) return;
+
+    currentOtp = otps[0];
+    currentOtpMessageId = latest.id;
+
+    quickBox.style.display = "";
+    quickBox.innerHTML = `
+      Quick OTP: <span class="otp">${esc(currentOtp)}</span>
+      <button class="quick-btn" onclick="copyOtp()">📋 Copy</button>
+    `;
+  } catch {
+    // silent
+  }
+}
+
+/** Load inbox **/
+async function loadInbox(userClick=false) {
+  const email = validateEmailOrAlert();
+  if (!email) return;
+
+  // reset "seen" if user changes mailbox
+  if (lastLoadedEmail && lastLoadedEmail !== email) {
+    seenIds = new Set();
+    currentOtp = "";
+    currentOtpMessageId = "";
+  }
+  lastLoadedEmail = email;
+
+  // reset quick otp UI each load
+  const quickBox = document.getElementById("quickOtpBox");
+  quickBox.style.display = "none";
+  quickBox.innerHTML = "";
+
+  const list = document.getElementById("list");
+  if (userClick) list.innerHTML = "<li class='muted'>Loading…</li>";
+
+  try {
+    const r = await fetch(`${API}/inbox?address=${encodeURIComponent(email)}`);
+    const res = await r.json();
+    const messages = res.messages || [];
+
+    // SORT: newest first
+    messages.sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+    list.innerHTML = "";
+
+    if (messages.length === 0) {
+      list.innerHTML = "<li class='muted'>No messages yet. If you expect one, click “Load Inbox” again.</li>";
+      return;
+    }
+
+    // show quick OTP from latest message (only if latest is NEW)
+    checkLatestOtp(email, messages);
+
+    messages.forEach(m => {
+      const li = document.createElement("li");
+      const subject = m.subject || "(no subject)";
+      const from = m.from ? ` — <span class="muted">${esc(m.from)}</span>` : "";
+      const date = m.date ? ` <span class="muted">(${esc(m.date)})</span>` : "";
+
+      const isNew = !seenIds.has(m.id);
+      const pill = isNew ? `<span class="pill new">NEW</span>` : `<span class="pill">seen</span>`;
+
+      li.innerHTML = `
+        <a onclick="loadMsg('${esc(m.id)}','${esc(email)}')">📧 ${esc(subject)}</a>
+        ${pill}${from}${date}
+      `;
+      list.appendChild(li);
+    });
+
+    setStatus("");
+
+  } catch (e) {
+    list.innerHTML = `<li class="muted">Failed to load inbox. Please try again.</li>`;
+    setStatus("Network/API error.", true);
+  }
+}
+
+/** Load message + OTP **/
+async function loadMsg(id, mailbox) {
+  const render = document.getElementById("render");
+  const otpBox = document.getElementById("otpBox");
+  const copyBtn = document.getElementById("copyBtn");
+
+  render.className = "muted";
+  render.textContent = "Loading message…";
+  otpBox.style.display = "none";
+  otpBox.innerHTML = "";
+  copyBtn.style.display = "none";
+  currentOtp = "";
+  currentOtpMessageId = "";
+
+  // hide quick OTP when opening a message
+  const quickBox = document.getElementById("quickOtpBox");
+  quickBox.style.display = "none";
+  quickBox.innerHTML = "";
+
+  try {
+    const r = await fetch(`${API}/message?id=${encodeURIComponent(id)}&mailbox=${encodeURIComponent(mailbox)}`);
+    const data = await r.json();
+
+    // mark seen (RAM only)
+    seenIds.add(id);
+    currentOtpMessageId = id;
+
+    const body = extractBody(data);
+    if (!body) {
+      render.textContent = "This message has no displayable content.";
+      return;
+    }
+
+    const otps = body.match(OTP_REGEX) || [];
+    if (otps.length > 0) {
+      currentOtp = otps[0];
+      otpBox.style.display = "";
+      otpBox.innerHTML = `OTP: <span class="otp">${esc(currentOtp)}</span>`;
+      copyBtn.style.display = "";
+    }
+
+    render.className = "";
+    if (looksLikeHtml(body)) {
+      render.innerHTML = body; // render HTML
+    } else {
+      render.textContent = body;
+    }
+
+  } catch (e) {
+    render.className = "muted";
+    render.textContent = "Failed to load message. Please try again.";
+  }
+}
+
+async function copyOtp(){
+  if (!currentOtp) return alert("No OTP found.");
+  try {
+    await navigator.clipboard.writeText(currentOtp);
+    setStatus("Copied OTP.");
+    setTimeout(()=>setStatus(""), 1200);
+  } catch {
+    const t = document.createElement("textarea");
+    t.value = currentOtp;
+    document.body.appendChild(t);
+    t.select();
+    document.execCommand("copy");
+    document.body.removeChild(t);
+    setStatus("Copied OTP.");
+    setTimeout(()=>setStatus(""), 1200);
+  }
+
+  // After copying, treat that message as seen (RAM only) and hide Quick OTP
+  if (currentOtpMessageId) {
+    seenIds.add(currentOtpMessageId);
+    const qb = document.getElementById("quickOtpBox");
+    if (qb) { qb.style.display = "none"; qb.innerHTML = ""; }
+  }
+}
+</script>
+
+</body>
+</html>
