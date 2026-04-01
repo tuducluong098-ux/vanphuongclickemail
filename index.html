@@ -46,9 +46,9 @@
              autocomplete="off" autocapitalize="none" spellcheck="false">
       <div id="hint" class="muted"></div>
 
-      <!-- Gợi ý 3 email gần nhất -->
+      <!-- Gợi ý 5 email gần nhất -->
       <div id="recentWrap" class="recent-wrap" style="display:none">
-        <div class="recent-title">3 email gần nhất:</div>
+        <div class="recent-title">5 email gần nhất:</div>
         <div id="recentList" class="recent-list"></div>
       </div>
     </div>
@@ -83,7 +83,7 @@ const API = "https://vpclickemail.vercel.app/api"; // your Vercel link
 const ALLOWED_DOMAIN = "@vanphuong.click";         // allowed domain
 const OTP_REGEX = /\b\d{4,8}\b/g;                  // OTP 4–8 digits
 const RECENT_EMAILS_KEY = "vp_recent_emails";      // localStorage key
-const MAX_RECENT_EMAILS = 3;
+const MAX_RECENT_EMAILS = 5;
 
 /** RAM only (no storage) **/
 let seenIds = new Set();
@@ -220,7 +220,7 @@ async function loadInbox(userClick=false) {
   const email = validateEmailOrAlert();
   if (!email) return;
 
-  // lưu 3 email gần nhất
+  // lưu 5 email gần nhất
   saveRecentEmail(email);
 
   // reset "seen" if user changes mailbox
@@ -360,7 +360,7 @@ async function copyOtp(){
   }
 }
 
-/** Enter = Load Inbox, reload vẫn còn 3 email gần nhất **/
+/** Enter = Load Inbox, reload vẫn còn 5 email gần nhất **/
 document.addEventListener("DOMContentLoaded", function(){
   renderRecentEmails();
 
