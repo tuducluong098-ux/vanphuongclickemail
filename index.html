@@ -21,6 +21,18 @@
     .otp{font-weight:700;font-size:18px;padding:6px 10px;border-radius:10px;background:#111;color:#fff;display:inline-block}
     .danger{color:#b00020}
     .quick-btn{padding:8px 12px;border-radius:10px;background:#111;color:#fff;border:0;margin-left:8px}
+
+    /* thêm nhẹ phần gợi ý email */
+    .recent-wrap{margin-top:8px}
+    .recent-title{font-size:13px;color:#666;margin-bottom:6px}
+    .recent-list{display:flex;gap:8px;flex-wrap:wrap}
+    .recent-item{
+      display:inline-flex;align-items:center;gap:6px;
+      padding:6px 10px;border-radius:999px;
+      background:#f1f3f4;border:1px solid #ddd;
+      font-size:13px;cursor:pointer;
+    }
+    .recent-item:hover{background:#e9ecef}
   </style>
 </head>
 <body>
@@ -33,6 +45,12 @@
       <input id="email" placeholder="Enter your email address"
              autocomplete="off" autocapitalize="none" spellcheck="false">
       <div id="hint" class="muted"></div>
+
+      <!-- Gợi ý 3 email gần nhất -->
+      <div id="recentWrap" class="recent-wrap" style="display:none">
+        <div class="recent-title">3 email gần nhất:</div>
+        <div id="recentList" class="recent-list"></div>
+      </div>
     </div>
 
     <button onclick="loadInbox(true)">Load Inbox</button>
@@ -62,8 +80,10 @@
 <script>
 /** CONFIG **/
 const API = "https://vpclickemail.vercel.app/api"; // your Vercel link
-const ALLOWED_DOMAIN = "@vanphuong.click";             // allowed domain
-const OTP_REGEX = /\b\d{4,8}\b/g;                     // OTP 4–8 digits
+const ALLOWED_DOMAIN = "@vanphuong.click";         // allowed domain
+const OTP_REGEX = /\b\d{4,8}\b/g;                  // OTP 4–8 digits
+const RECENT_EMAILS_KEY = "vp_recent_emails";      // localStorage key
+const MAX_RECENT_EMAILS = 3;
 
 /** RAM only (no storage) **/
 let seenIds = new Set();
@@ -112,6 +132,54 @@ function validateEmailOrAlert(){
   return email;
 }
 
+/** recent emails - localStorage **/
+function getRecentEmails(){
+  try{
+    const raw = localStorage.getItem(RECENT_EMAILS_KEY);
+    const arr = JSON.parse(raw || "[]");
+    return Array.isArray(arr) ? arr : [];
+  }catch{
+    return [];
+  }
+}
+
+function saveRecentEmail(email){
+  if (!email) return;
+  let arr = getRecentEmails();
+
+  arr = arr.filter(x => String(x).toLowerCase() !== String(email).toLowerCase());
+  arr.unshift(email);
+  arr = arr.slice(0, MAX_RECENT_EMAILS);
+
+  localStorage.setItem(RECENT_EMAILS_KEY, JSON.stringify(arr));
+  renderRecentEmails();
+}
+
+function renderRecentEmails(){
+  const wrap = document.getElementById("recentWrap");
+  const list = document.getElementById("recentList");
+  const arr = getRecentEmails();
+
+  list.innerHTML = "";
+
+  if (!arr.length){
+    wrap.style.display = "none";
+    return;
+  }
+
+  wrap.style.display = "";
+  arr.forEach(email => {
+    const item = document.createElement("div");
+    item.className = "recent-item";
+    item.textContent = email;
+    item.onclick = () => {
+      document.getElementById("email").value = email;
+      loadInbox(true);
+    };
+    list.appendChild(item);
+  });
+}
+
 /** QUICK OTP: show only if latest mail is NEW (not opened/copied yet) **/
 async function checkLatestOtp(email, messages){
   const quickBox = document.getElementById("quickOtpBox");
@@ -151,6 +219,9 @@ async function checkLatestOtp(email, messages){
 async function loadInbox(userClick=false) {
   const email = validateEmailOrAlert();
   if (!email) return;
+
+  // lưu 3 email gần nhất
+  saveRecentEmail(email);
 
   // reset "seen" if user changes mailbox
   if (lastLoadedEmail && lastLoadedEmail !== email) {
@@ -288,6 +359,19 @@ async function copyOtp(){
     if (qb) { qb.style.display = "none"; qb.innerHTML = ""; }
   }
 }
+
+/** Enter = Load Inbox, reload vẫn còn 3 email gần nhất **/
+document.addEventListener("DOMContentLoaded", function(){
+  renderRecentEmails();
+
+  const emailInput = document.getElementById("email");
+  emailInput.addEventListener("keydown", function(e){
+    if (e.key === "Enter") {
+      e.preventDefault();
+      loadInbox(true);
+    }
+  });
+});
 </script>
 
 </body>
